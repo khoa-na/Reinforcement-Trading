@@ -62,8 +62,10 @@ A reinforcement learning trading system that trades USDT-margined futures on the
 - **Timeframe:** H1 (1 hour)
 - **Assets:** Top 5-10 by liquidity
   - BTC, ETH, BNB, SOL, XRP, ADA, DOGE, AVAX, DOT, MATIC
-- **Training period:** 70% of data (by time)
-- **Test period:** 30% of data (by time)
+- **Training period:** 60% of data (by time) - chronological, no shuffling
+- **Validation period:** 20% of data (by time) - for hyperparameter tuning
+- **Test period:** 20% of data (by time) - final evaluation
+- **Note:** Time-series data uses temporal split only (no random shuffling)
 
 ---
 
@@ -71,16 +73,19 @@ A reinforcement learning trading system that trades USDT-margined futures on the
 
 | Action | Behavior |
 |--------|----------|
-| Open Long | Open long position with 10x leverage |
+| Open Long | Open long position with 10x leverage (if no position) |
 | Close Long | Close existing long position |
-| Open Short | Open short position with 10x leverage |
+| Open Short | Open short position with 10x leverage (if no position) |
 | Close Short | Close existing short position |
+| Reverse | Close current position and open opposite direction |
 | Hold | Do nothing |
 
 **Rules:**
 - Maximum 1 position at a time (long OR short, not both)
-- Cannot open new position while one exists
+- If in a long position: Open Long = Hold, Open Short = Reverse
+- If in a short position: Open Short = Hold, Open Long = Reverse
 - 10x leverage = 10% margin required
+- Fixed position sizing: 100% of available margin
 
 ---
 
@@ -129,23 +134,50 @@ A reinforcement learning trading system that trades USDT-margined futures on the
 
 **Total:** ~20 features per timestep
 
+### Feature Normalization
+
+| Method | Application |
+|--------|-------------|
+| Z-score standardization | Price returns, volatility, ATR |
+| Min-max [0,1] | RSI, position PnL % |
+| Cyclic encoding | Hour of day, day of week |
+| Moving average normalization | Indicators divided by close price |
+
+**Implementation:**
+- Compute running statistics (mean, std) during warmup period
+- First 24 bars (warmup): use expanding window, clip extreme values
+- After warmup: use rolling window (e.g., 100 bars) for stability
+- Handle NaN: replace with 0 or default values
+
+### Warmup Period
+
+- **Warmup bars:** 24 bars (1 day of H1 data)
+- **Purpose:** Initialize rolling indicator statistics
+- **During warmup:**
+  - Episode does not start (no actions, no rewards)
+  - Accumulate price history for indicator calculation
+  - After warmup: indicators have valid values
+- **Episode starts** at bar 25 and runs for 168 bars
+
 ---
 
 ## 7. Reward Function
 
 ```
-reward = portfolio_return - λ × drawdown_penalty
+reward = step_return - λ × drawdown_penalty
 
 Where:
-- portfolio_return = (unrealized_pnl + realized_pnl) / margin
+- step_return = (current_equity - previous_equity) / initial_equity
+- current_equity = balance + unrealized_pnl + realized_pnl
 - drawdown_penalty = max(0, current_drawdown)^2 × 0.1
 - λ = 0.1 (penalty coefficient)
 ```
 
 **Key design choices:**
-- Smoothed rewards reduce noise from bar-to-bar chop
-- Drawdown penalty discourages large losses
-- Margin-based returns normalize across price levels
+- **Step-based reward** (not cumulative) - agent rewarded for change in equity, not for holding
+- **Initial equity normalization** - rewards are % of starting capital, not margin
+- **Drawdown penalty** - discourages large losses
+- This prevents the "hold and wait" exploit where agent opens random positions
 
 ---
 
@@ -153,19 +185,50 @@ Where:
 
 | Condition | Action |
 |-----------|--------|
-| Position loss > 1% | Auto-close (stop-loss) |
-| Position gain > 4% | Auto-close (take-profit) |
-| Price reaches 90% of liquidation | Auto-close |
+| Position loss > 1% of entry price | Auto-close (stop-loss) |
+| Position gain > 4% of entry price | Auto-close (take-profit) |
+| Margin ratio < 10% (near liquidation) | Auto-close position |
 | Total drawdown > 15% | End episode early |
+
+**Liquidation Protection:**
+- With 10x leverage, ~10% adverse move = liquidation
+- Margin ratio = (margin + unrealized_pnl) / (position_value × maintenance_margin_ratio)
+- Close position when margin ratio drops below 10%
+- This provides buffer before actual liquidation
 
 **Fee Estimation:**
 - Maker fee: 0.02%
 - Taker fee: 0.04%
-- Slippage: 0.05%
+- Slippage: 0.05% (applied to execution price)
 
 ---
 
-## 9. Training Configuration
+## 9. Multi-Asset Training
+
+- **Strategy:** Train one agent per asset (separate model for each symbol)
+- **Rationale:** Each crypto has different dynamics; single-agent multi-asset is harder to train
+- **Execution:** Train separate PPO models for BTC, ETH, etc.
+- **Selection:** Use best-performing model for live trading OR ensemble
+
+**Alternative (if compute allows):**
+- Train on combined data, randomly sample asset each episode
+- Agent learns general market patterns across assets
+
+---
+
+### Order Execution
+
+| Parameter | Value |
+|-----------|-------|
+| Order type | Market (instant execution) |
+| Slippage model | Fixed 0.05% adverse |
+| Fill simulation | Immediate at simulated price |
+
+**Note:** Backtest uses market orders for simplicity. For more realistic backtests, consider limit orders with fill probability modeling.
+
+---
+
+## 11. Training Configuration
 
 | Parameter | Value |
 |-----------|-------|
@@ -182,7 +245,7 @@ Where:
 
 ---
 
-## 10. Data Requirements
+## 12. Data Requirements
 
 ### OHLCV Fields
 - open, high, low, close, volume
@@ -194,7 +257,7 @@ Where:
 
 ---
 
-## 11. Implementation Plan
+## 13. Implementation Plan
 
 ### Phase 1: Data & Environment
 - [ ] Data fetcher for Binance
@@ -219,7 +282,7 @@ Where:
 
 ---
 
-## 12. File Structure
+## 14. File Structure
 
 ```
 reinforcement-trading/
@@ -256,7 +319,7 @@ reinforcement-trading/
 
 ---
 
-## 13. Notes
+## 15. Notes
 
 - This is a backtesting system first. Live trading requires additional risk controls.
 - 10x leverage is aggressive. The risk management layer is critical.
