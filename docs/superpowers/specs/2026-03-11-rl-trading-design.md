@@ -170,6 +170,8 @@ Where:
 - step_return = (current_equity - previous_equity) / initial_equity
 - current_equity = balance + unrealized_pnl + realized_pnl
 - drawdown_penalty = max(0, current_drawdown)^2 × 0.1
+- current_drawdown = (peak_equity - current_equity) / peak_equity
+- peak_equity = maximum equity seen in episode so far
 - λ = 0.1 (penalty coefficient)
 ```
 
@@ -227,6 +229,8 @@ Where:
 **Note:** Backtest uses market orders for simplicity. For more realistic backtests, consider limit orders with fill probability modeling.
 
 ---
+
+## 10. Execution Details
 
 ## 11. Training Configuration
 
