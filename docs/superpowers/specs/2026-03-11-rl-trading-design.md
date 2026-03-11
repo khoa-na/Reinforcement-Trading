@@ -73,19 +73,29 @@ A reinforcement learning trading system that trades USDT-margined futures on the
 
 | Action | Behavior |
 |--------|----------|
-| Open Long | Open long position with 10x leverage (if no position) |
+| Open Long 25% | Open long with 25% margin (2.5x leverage effective) |
+| Open Long 50% | Open long with 50% margin (5x leverage effective) |
+| Open Long 75% | Open long with 75% margin (7.5x leverage effective) |
+| Open Long 100% | Open long with 100% margin (10x leverage effective) |
 | Close Long | Close existing long position |
-| Open Short | Open short position with 10x leverage (if no position) |
+| Open Short 25% | Open short with 25% margin (2.5x leverage effective) |
+| Open Short 50% | Open short with 50% margin (5x leverage effective) |
+| Open Short 75% | Open short with 75% margin (7.5x leverage effective) |
+| Open Short 100% | Open short with 100% margin (10x leverage effective) |
 | Close Short | Close existing short position |
-| Reverse | Close current position and open opposite direction |
+| Reverse 25% | Close and open opposite with 25% margin |
+| Reverse 50% | Close and open opposite with 50% margin |
+| Reverse 75% | Close and open opposite with 75% margin |
+| Reverse 100% | Close and open opposite with 100% margin |
 | Hold | Do nothing |
+
+**Total: 15 actions**
 
 **Rules:**
 - Maximum 1 position at a time (long OR short, not both)
-- If in a long position: Open Long = Hold, Open Short = Reverse
-- If in a short position: Open Short = Hold, Open Long = Reverse
-- 10x leverage = 10% margin required
-- Fixed position sizing: 100% of available margin
+- If in a long position: Open Long = Hold, Open Short = Reverse (with selected %)
+- If in a short position: Open Short = Hold, Open Long = Reverse (with selected %)
+- Margin required: 10% × position_size_% × 10x leverage = position_size_% of equity
 
 ---
 
